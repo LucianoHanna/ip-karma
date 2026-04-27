@@ -29,11 +29,11 @@ docker build -t ip-karma:latest .
 docker run -d \
   --name ip-karma \
   -p 8000:8000 \
-  -v ip-karma-data:/app \
+  -v ip-karma-data:/app/data \
   ip-karma:latest
 ```
 
-The SQLite database (`ip_karma.db`) is stored inside `/app` in the container. Mounting a volume (as shown above) keeps the data persistent across container restarts.
+The SQLite database (`ip_karma.db`) is stored inside `/app/data` in the container. Mounting a volume at that path (as shown above) keeps the data persistent across container restarts and image updates.
 
 ### 3. Verify the service is up
 
@@ -181,8 +181,8 @@ After the restart, trigger a test alert above level 5 and confirm a new entry
 appears in `ip_karma.db`:
 
 ```bash
-sqlite3 /app/ip_karma.db "SELECT * FROM accounting_log ORDER BY id DESC LIMIT 5;"
-sqlite3 /app/ip_karma.db "SELECT * FROM reputation_state ORDER BY updated_at DESC LIMIT 5;"
+sqlite3 /app/data/ip_karma.db "SELECT * FROM accounting_log ORDER BY id DESC LIMIT 5;"
+sqlite3 /app/data/ip_karma.db "SELECT * FROM reputation_state ORDER BY updated_at DESC LIMIT 5;"
 ```
 
 ---
@@ -196,7 +196,7 @@ database and prints an `ipset restore`-compatible file.
 
 ```bash
 docker run --rm \
-  -v ip-karma-data:/app \
+  -v ip-karma-data:/app/data \
   ip-karma:latest \
   python export_ipset.py > denylist.ipset
 ```
@@ -226,7 +226,7 @@ never in an incomplete state.
 
 ```bash
 docker run --rm \
-  -v ip-karma-data:/app \
+  -v ip-karma-data:/app/data \
   ip-karma:latest \
   python export_ipset.py --family inet6 --set-name denylist6 > denylist6.ipset
 
@@ -237,7 +237,7 @@ ipset restore < denylist6.ipset
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--db` | `/app/ip_karma.db` | Path to the SQLite database |
+| `--db` | `/app/data/ip_karma.db` | Path to the SQLite database |
 | `--set-name` | `denylist` | Target ipset name |
 | `--family` | `inet` | IP family: `inet` (IPv4) or `inet6` (IPv6) |
 | `--min-level` | `1` | Minimum reputation level required for inclusion |

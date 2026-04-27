@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Generator
 import sqlite3
 
-DB_PATH = Path("ip_karma.db")
+DB_PATH = Path("/app/data/ip_karma.db")
 
 DDL = """
 CREATE TABLE IF NOT EXISTS reputation_state (
