@@ -90,7 +90,7 @@ curl -X POST http://localhost:8000/wazuh-alert \
 | **Hit within ban window** | Current time ≤ `banned_until` | Increment `strikes`. If `strikes > 50`: increment `level`, reset `strikes=0`, recalculate `banned_until` |
 | **Hit after ban expired** | Current time > `banned_until` | Increment `level`, reset `strikes=0`, recalculate `banned_until` |
 
-**TTL formula:** `banned_until = now + 1 hour × 2^(level − 1)`
+**TTL formula:** `banned_until = now + min(1 hour × 2^(level − 1), 1 week)`
 
 | Level | Ban duration |
 |-------|-------------|
@@ -98,7 +98,11 @@ curl -X POST http://localhost:8000/wazuh-alert \
 | 2 | 2 h |
 | 3 | 4 h |
 | 4 | 8 h |
-| … | … |
+| 5 | 16 h |
+| 6 | 32 h |
+| 7 | 64 h |
+| 8 | 128 h |
+| ≥ 9 | 168 h (1 week, max) |
 
 ---
 

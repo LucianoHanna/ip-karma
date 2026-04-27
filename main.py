@@ -10,6 +10,7 @@ from database import init_db, get_connection
 
 STRIKES_THRESHOLD = 50
 BASE_TTL_HOURS = 1
+MAX_TTL_HOURS = 168  # 1 week cap
 
 
 @asynccontextmanager
@@ -44,7 +45,8 @@ def normalize_ip(srcip: str) -> str:
 
 
 def _ttl(level: int) -> timedelta:
-    return timedelta(hours=BASE_TTL_HOURS * (2 ** (level - 1)))
+    hours = min(BASE_TTL_HOURS * (2 ** (level - 1)), MAX_TTL_HOURS)
+    return timedelta(hours=hours)
 
 
 def _now() -> datetime:
@@ -62,7 +64,45 @@ def _parse_dt(value: str) -> datetime:
 # Core reputation logic
 # ---------------------------------------------------------------------------
 
-def update_reputation(conn: sqlite3.Connection, indicator: str) -> None:
+def _level_up(conn: sqlite3.Connection, indicator: str, level: int, now: datetime) -> None:
+    """Escalate the penalty level and recalculate the ban window."""
+    new_level = level + 1
+    banned_until = now + _ttl(new_level)
+    conn.execute(
+        """
+        UPDATE reputation_state
+        SET strikes = 0, level = ?, banned_until = ?, updated_at = ?
+        WHERE indicator = ?
+        """,
+        (new_level, banned_until.isoformat(), now.isoformat(), indicator),
+    )
+
+
+def _increment_strike(
+    conn: sqlite3.Connection,
+    indicator: str,
+    strikes: int,
+    level: int,
+    banned_until: datetime,
+    now: datetime,
+) -> None:
+    """Increment the strike counter; escalate level if threshold is exceeded."""
+    strikes += 1
+    if strikes > STRIKES_THRESHOLD:
+        _level_up(conn, indicator, level, now)
+        return
+    conn.execute(
+        """
+        UPDATE reputation_state
+        SET strikes = ?, updated_at = ?
+        WHERE indicator = ?
+        """,
+        (strikes, now.isoformat(), indicator),
+    )
+
+
+def register_indicator_hit(conn: sqlite3.Connection, indicator: str) -> None:
+    """Record that *indicator* was seen right now and update its reputation state."""
     now = _now()
     row = conn.execute(
         "SELECT strikes, level, banned_until FROM reputation_state WHERE indicator = ?",
@@ -87,32 +127,10 @@ def update_reputation(conn: sqlite3.Connection, indicator: str) -> None:
 
     if now <= banned_until:
         # Scenario 2: hit within ban window
-        strikes += 1
-        if strikes > STRIKES_THRESHOLD:
-            level += 1
-            strikes = 0
-            banned_until = now + _ttl(level)
-        conn.execute(
-            """
-            UPDATE reputation_state
-            SET strikes = ?, level = ?, banned_until = ?, updated_at = ?
-            WHERE indicator = ?
-            """,
-            (strikes, level, banned_until.isoformat(), now.isoformat(), indicator),
-        )
+        _increment_strike(conn, indicator, strikes, level, banned_until, now)
     else:
         # Scenario 3: hit after ban expired
-        level += 1
-        strikes = 0
-        banned_until = now + _ttl(level)
-        conn.execute(
-            """
-            UPDATE reputation_state
-            SET strikes = ?, level = ?, banned_until = ?, updated_at = ?
-            WHERE indicator = ?
-            """,
-            (strikes, level, banned_until.isoformat(), now.isoformat(), indicator),
-        )
+        _level_up(conn, indicator, level, now)
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +176,6 @@ async def wazuh_alert(request: Request) -> dict[str, str]:
         )
 
         # Step C – reputation state
-        update_reputation(conn, indicator)
+        register_indicator_hit(conn, indicator)
 
     return {"status": "ok", "indicator": indicator}
