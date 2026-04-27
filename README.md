@@ -184,3 +184,64 @@ appears in `ip_karma.db`:
 sqlite3 /app/ip_karma.db "SELECT * FROM accounting_log ORDER BY id DESC LIMIT 5;"
 sqlite3 /app/ip_karma.db "SELECT * FROM reputation_state ORDER BY updated_at DESC LIMIT 5;"
 ```
+
+---
+
+## Exporting the Denylist to ipset
+
+The `export_ipset.py` script reads all currently-banned indicators from the
+database and prints an `ipset restore`-compatible file.
+
+### Basic export (IPv4)
+
+```bash
+docker run --rm \
+  -v ip-karma-data:/app \
+  ip-karma:latest \
+  python export_ipset.py > denylist.ipset
+```
+
+Apply to the running kernel immediately:
+
+```bash
+ipset restore < denylist.ipset
+```
+
+### Example output
+
+```
+create denylist_temp hash:net family inet -exist
+flush denylist_temp
+add denylist_temp 192.0.2.1
+add denylist_temp 203.0.113.0/24
+swap denylist_temp denylist
+destroy denylist_temp
+```
+
+The script creates a temporary set, populates it atomically, swaps it with the
+live `denylist` set, and then removes the temporary set — so the active set is
+never in an incomplete state.
+
+### IPv6 export
+
+```bash
+docker run --rm \
+  -v ip-karma-data:/app \
+  ip-karma:latest \
+  python export_ipset.py --family inet6 --set-name denylist6 > denylist6.ipset
+
+ipset restore < denylist6.ipset
+```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--db` | `/app/ip_karma.db` | Path to the SQLite database |
+| `--set-name` | `denylist` | Target ipset name |
+| `--family` | `inet` | IP family: `inet` (IPv4) or `inet6` (IPv6) |
+| `--min-level` | `1` | Minimum reputation level required for inclusion |
+
+Only indicators whose `banned_until` is in the future are included. Use
+`--min-level` to restrict the export to higher-confidence entries (e.g.
+`--min-level 3` to skip first- and second-level bans).
