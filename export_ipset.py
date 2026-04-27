@@ -5,7 +5,7 @@ Usage (inside the container):
     python export_ipset.py [options]
 
 Typical docker invocation:
-    docker run --rm -v ip-karma-data:/app ip-karma:latest \
+    docker run --rm -v ip-karma-data:/app/data ip-karma:latest \
         python export_ipset.py > denylist.ipset
     ipset restore < denylist.ipset
 """
@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_DB = Path("/app/ip_karma.db")
+DEFAULT_DB = Path("/app/data/ip_karma.db")
 DEFAULT_SET = "denylist"
 
 
